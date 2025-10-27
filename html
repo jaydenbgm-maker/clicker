@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Cookie Clicker — Single File</title>
+<style>
+  :root{--bg:#f7f3ea;--panel:#fff;--accent:#b6722d;--muted:#6b6b6b}
+  *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  body{margin:0;min-height:100vh;background:linear-gradient(180deg,#fff 0%, #f0e6d8 100%);display:flex;align-items:center;justify-content:center;padding:24px;color:#2b2b2b}
+  .wrap{width:980px;max-width:100%;display:grid;grid-template-columns:360px 1fr;gap:18px}
+  .card{background:var(--panel);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(32,32,32,0.06)}
+  .cookie-area{text-align:center;padding:18px}
+  #cookie{width:220px;height:220px;border-radius:50%;background:radial-gradient(circle at 30% 20%, #ffd38a, #f0a84f);display:inline-flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+  #big-count{font-size:18px;margin-top:12px;font-weight:700}
+  .stats{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .stat{display:flex;justify-content:space-between;color:var(--muted)}
+  .upgrades{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}
+  .upgrade{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:8px;border:1px solid rgba(0,0,0,0.04)}
+  .upgrade .meta{flex:1}
+  .btn{background:var(--accent);color:white;padding:8px 10px;border-radius:8px;border:none;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:0.5;cursor:not-allowed}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  footer{margin-top:12px;color:var(--muted);font-size:13px}
+  .small{font-size:13px;color:var(--muted)}
+  .achievements{display:flex;gap:8px;flex-wrap:wrap}
+  .ach{padding:6px 8px;border-radius:8px;background:#fff9e8;border:1px solid rgba(0,0,0,0.03);font-size:12px}
+  .center{display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card cookie-area">
+      <header>
+        <div>
+          <div style="font-weight:800;font-size:18px">Cookie Clicker</div>
+          <div class="small">Click the cookie to earn cookies — buy upgrades to automate.</div>
+        </div>
+        <div style="text-align:right">
+          <div id="cps" class="small">0 CPS</div>
+          <div id="total" class="small">0 total</div>
+        </div>
+      </header>
+
+      <div id="cookie" title="Click me!">🍪</div>
+      <div id="big-count">0 cookies</div>
+
+      <div class="stats">
+        <div class="stat"><span>Cookies</span><strong id="cookies">0</strong></div>
+        <div class="stat"><span>Cookies per second</span><strong id="cookiesPerSecond">0</strong></div>
+      </div>
+
+      <footer>
+        <div class="small">Autosaves to localStorage. Refresh to continue where you left off.</div>
+      </footer>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:800">Shop</div>
+        <div class="small">Cookies: <strong id="hudCookies">0</strong></div>
+      </div>
+
+      <div class="upgrades" id="upgrades"></div>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid rgba(0,0,0,0.04)" />
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700">Achievements</div>
+        <div class="small" id="achCount">0</div>
+      </div>
+      <div class="achievements" id="achievements"></div>
+
+    </div>
+  </div>
+
+<script>
+(() => {
+  // Game data
+  const GAME = {
+    cookies: 0,
+    totalCookies: 0,
+    cps: 0,
+    clickValue: 1,
+    lastTick: performance.now(),
+    upgrades: [
+      {id:'cursor', name:'Cursor', baseCost:15, cps:0.1, qty:0, desc:'Automates clicking.'},
+      {id:'grandma', name:'Grandma', baseCost:100, cps:1, qty:0, desc:'Bakes cookies.'},
+      {id:'farm', name:'Farm', baseCost:1100, cps:8, qty:0, desc:'Produces large batches.'},
+      {id:'factory', name:'Factory', baseCost:12000, cps:47, qty:0, desc:'Industrial production.'}
+    ],
+    achievements: [
+      {id:'firstClick', name:'First Click', unlocked:false, cond:gs=>gs.totalCookies>=1},
+      {id:'clicks100', name:'100 Cookies', unlocked:false, cond:gs=>gs.totalCookies>=100},
+      {id:'buy1', name:'Shopper', unlocked:false, cond:gs=>gs.upgrades.some(u=>u.qty>0)}
+    ]
+  };
+
+  // DOM
+  const cookieEl = document.getElementById('cookie');
+  const bigCount = document.getElementById('big-count');
+  const cookiesEl = document.getElementById('cookies');
+  const cpsEl = document.getElementById('cookiesPerSecond');
+  const hudCookies = document.getElementById('hudCookies');
+  const upgradesEl = document.getElementById('upgrades');
+  const achievementsEl = document.getElementById('achievements');
+  const achCount = document.getElementById('achCount');
+  const cpsHeader = document.getElementById('cps');
+  const totalHeader = document.getElementById('total');
+
+  // Load/save
+  function save(){ localStorage.setItem('cc_save', JSON.stringify({cookies:GAME.cookies,totalCookies:GAME.totalCookies,upgrades:GAME.upgrades})); }
+  function load(){ const s = localStorage.getItem('cc_save'); if(!s) return; try{ const d = JSON.parse(s); GAME.cookies = d.cookies||0; GAME.totalCookies = d.totalCookies||0; if(d.upgrades) { for(const u of GAME.upgrades){ const saved = d.upgrades.find(x=>x.id===u.id); if(saved) u.qty = saved.qty||0; } } }catch(e){} }
+  load();
+
+  // Helpers
+  function format(n){ return n < 1000 ? Math.round(n*100)/100 : n.toLocaleString(undefined,{maximumFractionDigits:2}); }
+  function costFor(u){ return Math.floor(u.baseCost * Math.pow(1.15, u.qty)); }
+
+  // Render shop
+  function renderShop(){ upgradesEl.innerHTML=''; for(const u of GAME.upgrades){ const div = document.createElement('div'); div.className='upgrade'; const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<div style="font-weight:700">${u.name} <span style="font-weight:600;color:var(--muted)">x${u.qty}</span></div><div class="small">${u.desc}</div>`; const right = document.createElement('div'); const cost = costFor(u); const btn = document.createElement('button'); btn.className='btn'; btn.innerText = `Buy (${format(cost)})`; btn.disabled = GAME.cookies < cost; btn.addEventListener('click', ()=>{ if(GAME.cookies >= cost){ GAME.cookies -= cost; u.qty++; updateCps(); GAME.totalCookies += 0; save(); render(); checkAchievements(); } }); right.appendChild(btn); div.appendChild(meta); div.appendChild(right); upgradesEl.appendChild(div); } }
+
+  // Achievements
+  function renderAchievements(){ achievementsEl.innerHTML=''; let unlocked=0; for(const a of GAME.achievements){ if(a.unlocked){ unlocked++; const d = document.createElement('div'); d.className='ach'; d.innerText = a.name; achievementsEl.appendChild(d); } } achCount.innerText = unlocked; }
+  function checkAchievements(){ for(const a of GAME.achievements){ if(!a.unlocked && a.cond(GAME)){ a.unlocked = true; renderAchievements(); } } }
+
+  // CPS calc
+  function updateCps(){ let cps = 0; for(const u of GAME.upgrades){ cps += u.cps * u.qty; } GAME.cps = cps; }
+
+  // Main render
+  function render(){ cookiesEl.innerText = format(GAME.cookies); bigCount.innerText = `${format(GAME.cookies)} cookies`; cpsEl.innerText = `${format(GAME.cps)} CPS`; hudCookies.innerText = format(GAME.cookies); cpsHeader.innerText = `${format(GAME.cps)} CPS`; totalHeader.innerText = `${format(GAME.totalCookies)} total`; renderShop(); renderAchievements(); }
+
+  // Cookie interactions
+  cookieEl.addEventListener('click', ()=>{ GAME.cookies += GAME.clickValue; GAME.totalCookies += GAME.clickValue; save(); render(); checkAchievements(); popText('+ ' + GAME.clickValue); });
+
+  // small popup text
+  function popText(text){ const el = document.createElement('div'); el.style.position='fixed'; el.style.left='50%'; el.style.transform='translateX(-50%)'; el.style.top='20%'; el.style.fontWeight='800'; el.style.background='rgba(255,255,255,0.9)'; el.style.padding='6px 10px'; el.style.borderRadius='6px'; el.style.boxShadow='0 8px 20px rgba(0,0,0,0.08)'; el.style.pointerEvents='none'; el.innerText = text; document.body.appendChild(el); setTimeout(()=>{ el.style.transition='transform 600ms ease,opacity 600ms ease'; el.style.transform='translateX(-50%) translateY(-40px)'; el.style.opacity='0'; },20); setTimeout(()=>el.remove(),700);
+  }
+
+  // Tick
+  function tick(now){ const dt = (now - GAME.lastTick)/1000; GAME.lastTick = now; GAME.cookies += GAME.cps * dt; GAME.totalCookies += GAME.cps * dt; render(); if(Math.random()<0.005) save(); requestAnimationFrame(tick); }
+
+  // Initialize
+  updateCps(); render(); checkAchievements(); renderAchievements(); GAME.lastTick = performance.now(); requestAnimationFrame(tick);
+
+  // Quick keyboard shortcuts
+  window.addEventListener('keydown', e=>{ if(e.key==='s'){ save(); popText('Saved'); } if(e.key==='r'){ localStorage.removeItem('cc_save'); popText('Save cleared'); } });
+
+})();
+</script>
+</body>
+</html>
